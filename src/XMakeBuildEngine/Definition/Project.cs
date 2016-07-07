@@ -6,6 +6,7 @@
 //-----------------------------------------------------------------------
 
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
@@ -1030,6 +1031,109 @@ namespace Microsoft.Build.Evaluation
             ErrorUtilities.VerifyThrowArgumentNull(item, "item");
 
             return ((IItem)item).EvaluatedIncludeEscaped;
+        }
+
+        public List<ProvenanceResult> GetItemProvenance(string itemValue)
+        {
+            return GetItemProvenance(itemValue, _data.EvaluatedItemElements);
+        }
+
+        public List<ProvenanceResult> GetItemProvenance(string itemValue, string itemType)
+        {
+            return GetItemProvenance(itemValue, _data.EvaluatedItemElements.Where(i => i.ItemType.Equals(itemType)));
+        }
+
+        public List<ProvenanceResult> GetItemProvenance(ProjectItem item)
+        {
+            var itemElementsAbove = _data.EvaluatedItemElements
+                                            .Where(i => i.ItemType.Equals(item.ItemType))
+                                            .TakeWhile(i => i != item.Xml)
+                                            .ToList();
+            itemElementsAbove.Add(item.Xml);
+
+            return GetItemProvenance(item.EvaluatedInclude, itemElementsAbove);
+        }
+
+
+        private List<ProvenanceResult> GetItemProvenance(string itemValue, IEnumerable<ProjectItemElement> projectElements )
+        {
+            var result = new List<ProvenanceResult>();
+
+            foreach (var itemElement in projectElements)
+            {
+                Provenance provenance;
+                var itemIsInExclude = IsItemInItemSpec(itemElement.Exclude, itemValue, out provenance);
+
+                if (itemIsInExclude)
+                {
+                    result.Add(new ProvenanceResult(itemElement, Operation.Exclude, provenance));
+                }
+                else
+                {
+                    var itemIsInInclude = IsItemInItemSpec(itemElement.Include, itemValue, out provenance);
+
+                    if (itemIsInInclude)
+                    {
+                        result.Add(new ProvenanceResult(itemElement, Operation.Include, provenance));
+                    }
+                }
+            }
+
+            return result;
+        }
+
+        private static bool IsItemInItemSpec(string itemSpec,  string item, out Provenance provenance)
+        {
+            provenance = Provenance.Undefined;
+            var itemInSpec = false;
+
+            if (string.IsNullOrEmpty(itemSpec))
+            {
+                return false;
+            }
+
+            foreach (var itemFragment in ExpressionShredder.SplitSemiColonSeparatedList(itemSpec))
+            {
+                if (IsPropertyReferenceFragment(itemFragment) || IsItemReferenceFragment(itemFragment))
+                {
+                    continue;
+                }
+
+                if (IsGlobFragment(itemFragment) && IsFileInGlob(itemFragment, item))
+                {
+                    provenance |= Provenance.Glob;
+                    itemInSpec = true;
+                }
+
+                if (item.Equals(itemFragment))
+                {
+                    provenance |= Provenance.StringLiteral;
+                    itemInSpec = true;
+                }
+            }
+
+            return itemInSpec;
+        }
+
+        private static bool IsFileInGlob(string globPattern, string file)
+        {
+            var match = FileMatcher.FileMatch(globPattern, file);
+            return match.isLegalFileSpec && match.isMatch;
+        }
+
+        private static bool IsGlobFragment(string itemFragment)
+        {
+            return FileMatcher.HasWildcards(itemFragment);
+        }
+
+        private static bool IsItemReferenceFragment(string itemFragment)
+        {
+            return itemFragment.Contains("@(");
+        }
+
+        private static bool IsPropertyReferenceFragment(string itemFragment)
+        {
+            return itemFragment.Contains("$(");
         }
 
         /// <summary>
@@ -2310,6 +2414,7 @@ namespace Microsoft.Build.Evaluation
             }
         }
 
+
         /// <summary>
         /// Encapsulates the backing data of a Project, so that it can be passed to the Evaluator to
         /// fill in on a re-evaluation without having to expose property setters.
@@ -3147,6 +3252,34 @@ namespace Microsoft.Build.Evaluation
                 string value = (property == null) ? String.Empty : property.EvaluatedValue;
                 return value;
             }
+        }
+    }
+
+    [Flags]
+    public enum Provenance
+    {
+        Undefined = 0,
+        StringLiteral = 1,
+        Glob = 2
+    }
+
+    public enum Operation
+    {
+        Include, 
+        Exclude
+    }
+
+    public class ProvenanceResult
+    {
+        public Operation Operation { get; private set; }
+        public ProjectItemElement ItemElement { get; private set; }
+        public Provenance Provenance { get; private set; }
+
+        public ProvenanceResult(ProjectItemElement itemElement, Operation operation, Provenance provenance)
+        {
+            ItemElement = itemElement;
+            Operation = operation;
+            Provenance = provenance;
         }
     }
 }

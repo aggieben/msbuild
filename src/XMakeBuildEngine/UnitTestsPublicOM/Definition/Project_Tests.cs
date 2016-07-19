@@ -2418,7 +2418,7 @@ namespace Microsoft.Build.UnitTests.OM.Definition
         }
 
         [Fact]
-        public void GetItemProvenanceStringLiteral()
+        public void GetItemProvenanceOnlyStringLiteral()
         {
             var project =
                 @"<Project ToolsVersion='msbuilddefaulttoolsversion' DefaultTargets='Build' xmlns='msbuildnamespace'>
@@ -2430,17 +2430,17 @@ namespace Microsoft.Build.UnitTests.OM.Definition
                 </Project>
                 ";
 
-            var expected = new List<Tuple<string, Operation, Provenance>>
+            var expected = new List<Tuple<string, Operation, Provenance, int>>
             {
-                Tuple.Create("A", Operation.Include, Provenance.StringLiteral),
-                Tuple.Create("B", Operation.Exclude, Provenance.StringLiteral)
+                Tuple.Create("A", Operation.Include, Provenance.StringLiteral, 1),
+                Tuple.Create("B", Operation.Exclude, Provenance.StringLiteral, 1)
             };
 
             AssertProvenanceResult(expected, project, "1");
         }
 
         [Fact]
-        public void GetItemProvenanceGlob()
+        public void GetItemProvenanceOnlyGlob()
         {
             var project = 
             @"<Project ToolsVersion='msbuilddefaulttoolsversion' DefaultTargets='Build' xmlns='msbuildnamespace'>
@@ -2452,10 +2452,10 @@ namespace Microsoft.Build.UnitTests.OM.Definition
                 </Project>
             ";
 
-            var expected = new List<Tuple<string, Operation, Provenance>>
+            var expected = new List<Tuple<string, Operation, Provenance, int>>
             {
-                Tuple.Create("A", Operation.Include, Provenance.Glob),
-                Tuple.Create("B", Operation.Exclude, Provenance.Glob)
+                Tuple.Create("A", Operation.Include, Provenance.Glob, 1),
+                Tuple.Create("B", Operation.Exclude, Provenance.Glob, 1)
             };
 
             AssertProvenanceResult(expected, project, "2.foo");
@@ -2467,17 +2467,17 @@ namespace Microsoft.Build.UnitTests.OM.Definition
             var project = 
             @"<Project ToolsVersion='msbuilddefaulttoolsversion' DefaultTargets='Build' xmlns='msbuildnamespace'>
                   <ItemGroup>
-                    <A Include=`*.foo;1.foo`/>
-                    <B Include=`1;2;3` Exclude=`*.foo;1.foo`/>
+                    <A Include=`*.foo;1.foo;1.foo`/>
+                    <B Include=`1;2;3` Exclude=`*.foo;1.foo;*.foo`/>
                     <C Include=`2;3` Exclude=`2`/>
                   </ItemGroup>
                 </Project>
             ";
 
-            var expected = new List<Tuple<string, Operation, Provenance>>
+            var expected = new List<Tuple<string, Operation, Provenance, int>>
             {
-                Tuple.Create("A", Operation.Include, Provenance.Glob | Provenance.StringLiteral),
-                Tuple.Create("B", Operation.Exclude, Provenance.Glob | Provenance.StringLiteral)
+                Tuple.Create("A", Operation.Include, Provenance.Glob | Provenance.StringLiteral, 3),
+                Tuple.Create("B", Operation.Exclude, Provenance.Glob | Provenance.StringLiteral, 3)
             };
 
             AssertProvenanceResult(expected, project, "1.foo");
@@ -2497,10 +2497,10 @@ namespace Microsoft.Build.UnitTests.OM.Definition
                 </Project>
             ";
 
-            var expected = new List<Tuple<string, Operation, Provenance>>
+            var expected = new List<Tuple<string, Operation, Provenance, int>>
             {
-                Tuple.Create("B", Operation.Include, Provenance.Glob | Provenance.StringLiteral),
-                Tuple.Create("B", Operation.Exclude, Provenance.Glob | Provenance.StringLiteral)
+                Tuple.Create("B", Operation.Include, Provenance.Glob | Provenance.StringLiteral, 2),
+                Tuple.Create("B", Operation.Exclude, Provenance.Glob | Provenance.StringLiteral, 2)
             };
 
             AssertProvenanceResult(expected, project, "1.foo", "B");
@@ -2520,28 +2520,28 @@ namespace Microsoft.Build.UnitTests.OM.Definition
                 </Project>
             ";
 
-            var expected = new List<Tuple<string, Operation, Provenance>>
+            var expected = new List<Tuple<string, Operation, Provenance, int>>
             {
-                Tuple.Create("B", Operation.Exclude, Provenance.Glob | Provenance.StringLiteral),
-                Tuple.Create("B", Operation.Include, Provenance.Glob | Provenance.StringLiteral)
+                Tuple.Create("B", Operation.Exclude, Provenance.Glob | Provenance.StringLiteral, 2),
+                Tuple.Create("B", Operation.Include, Provenance.Glob | Provenance.StringLiteral, 2)
             };
 
             AssertProvenanceResult(expected, project, "1.foo", 1);
         }
 
-        private static void AssertProvenanceResult(List<Tuple<string, Operation, Provenance>> expected, string project, string itemValue)
+        private static void AssertProvenanceResult(List<Tuple<string, Operation, Provenance, int>> expected, string project, string itemValue)
         {
             var provenanceResult = ObjectModelHelpers.CreateInMemoryProject(project).GetItemProvenance(itemValue);
             AssertProvenanceResult(expected, provenanceResult);
         }
 
-        private static void AssertProvenanceResult(List<Tuple<string, Operation, Provenance>> expected, string project, string itemValue, string itemType)
+        private static void AssertProvenanceResult(List<Tuple<string, Operation, Provenance, int>> expected, string project, string itemValue, string itemType)
         {
             var provenanceResult = ObjectModelHelpers.CreateInMemoryProject(project).GetItemProvenance(itemValue, itemType);
             AssertProvenanceResult(expected, provenanceResult);
         }
 
-        private static void AssertProvenanceResult(List<Tuple<string, Operation, Provenance>> expected, string project, string itemValue, int position)
+        private static void AssertProvenanceResult(List<Tuple<string, Operation, Provenance, int>> expected, string project, string itemValue, int position)
         {
             var p = ObjectModelHelpers.CreateInMemoryProject(project);
             var item = p.Items.Where(i => i.EvaluatedInclude.Equals(itemValue)).ElementAt(position);
@@ -2550,7 +2550,7 @@ namespace Microsoft.Build.UnitTests.OM.Definition
             AssertProvenanceResult(expected, provenanceResult);
         }
 
-        private static void AssertProvenanceResult(List<Tuple<string, Operation, Provenance>> expected, List<ProvenanceResult> actual)
+        private static void AssertProvenanceResult(List<Tuple<string, Operation, Provenance, int>> expected, List<ProvenanceResult> actual)
         {
             Assert.Equal(expected.Count, actual.Count);
 
@@ -2562,6 +2562,7 @@ namespace Microsoft.Build.UnitTests.OM.Definition
                 Assert.Equal(expectedProvenance.Item1, actualProvenance.ItemElement.ItemType);
                 Assert.Equal(expectedProvenance.Item2, actualProvenance.Operation);
                 Assert.Equal(expectedProvenance.Item3, actualProvenance.Provenance);
+                Assert.Equal(expectedProvenance.Item4, actualProvenance.Occurrences);
             }
         }
 

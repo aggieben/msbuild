@@ -1062,19 +1062,20 @@ namespace Microsoft.Build.Evaluation
             foreach (var itemElement in projectElements)
             {
                 Provenance provenance;
-                var itemIsInExclude = IsItemInItemSpec(itemElement.Exclude, itemValue, out provenance);
 
-                if (itemIsInExclude)
+                var occurrencesInExclude = IsItemInItemSpec(itemElement.Exclude, itemValue, out provenance);
+
+                if (occurrencesInExclude > 0)
                 {
-                    result.Add(new ProvenanceResult(itemElement, Operation.Exclude, provenance));
+                    result.Add(new ProvenanceResult(itemElement, Operation.Exclude, provenance, occurrencesInExclude));
                 }
                 else
                 {
-                    var itemIsInInclude = IsItemInItemSpec(itemElement.Include, itemValue, out provenance);
+                    var occurrencesInInclude = IsItemInItemSpec(itemElement.Include, itemValue, out provenance);
 
-                    if (itemIsInInclude)
+                    if (occurrencesInInclude > 0)
                     {
-                        result.Add(new ProvenanceResult(itemElement, Operation.Include, provenance));
+                        result.Add(new ProvenanceResult(itemElement, Operation.Include, provenance, occurrencesInInclude));
                     }
                 }
             }
@@ -1082,14 +1083,15 @@ namespace Microsoft.Build.Evaluation
             return result;
         }
 
-        private static bool IsItemInItemSpec(string itemSpec,  string item, out Provenance provenance)
+        private static int IsItemInItemSpec(string itemSpec, string item, out Provenance provenance)
         {
             provenance = Provenance.Undefined;
-            var itemInSpec = false;
+
+            var occurrences = 0;
 
             if (string.IsNullOrEmpty(itemSpec))
             {
-                return false;
+                return occurrences;
             }
 
             foreach (var itemFragment in ExpressionShredder.SplitSemiColonSeparatedList(itemSpec))
@@ -1102,17 +1104,17 @@ namespace Microsoft.Build.Evaluation
                 if (IsGlobFragment(itemFragment) && IsFileInGlob(itemFragment, item))
                 {
                     provenance |= Provenance.Glob;
-                    itemInSpec = true;
+                    occurrences++;
                 }
 
                 if (item.Equals(itemFragment))
                 {
                     provenance |= Provenance.StringLiteral;
-                    itemInSpec = true;
+                    occurrences++;
                 }
             }
 
-            return itemInSpec;
+            return occurrences;
         }
 
         private static bool IsFileInGlob(string globPattern, string file)
@@ -3274,12 +3276,14 @@ namespace Microsoft.Build.Evaluation
         public Operation Operation { get; private set; }
         public ProjectItemElement ItemElement { get; private set; }
         public Provenance Provenance { get; private set; }
+        public int Occurrences { get; private set; }
 
-        public ProvenanceResult(ProjectItemElement itemElement, Operation operation, Provenance provenance)
+        public ProvenanceResult(ProjectItemElement itemElement, Operation operation, Provenance provenance, int occurrences)
         {
             ItemElement = itemElement;
             Operation = operation;
             Provenance = provenance;
+            Occurrences = occurrences;
         }
     }
 }

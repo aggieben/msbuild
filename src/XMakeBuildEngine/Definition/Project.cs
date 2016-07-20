@@ -1059,11 +1059,13 @@ namespace Microsoft.Build.Evaluation
         {
             var result = new List<ProvenanceResult>();
 
+            var expander = new Expander<ProjectProperty, ProjectItem>(_data.Properties, _data.Items);
+
             foreach (var itemElement in projectElements)
             {
                 Provenance provenance;
 
-                var occurrencesInExclude = IsItemInItemSpec(itemElement.Exclude, itemValue, out provenance);
+                var occurrencesInExclude = ItemMatchesInSpecCompareViaExpander(itemValue, itemElement.Exclude, s => expander.ExpandIntoStringLeaveEscaped(s, ExpanderOptions.ExpandPropertiesAndItems, itemElement.ExcludeLocation), out provenance);
 
                 if (occurrencesInExclude > 0)
                 {
@@ -1071,7 +1073,7 @@ namespace Microsoft.Build.Evaluation
                 }
                 else
                 {
-                    var occurrencesInInclude = IsItemInItemSpec(itemElement.Include, itemValue, out provenance);
+                    var occurrencesInInclude = ItemMatchesInSpecCompareViaExpander(itemValue, itemElement.Include, s => expander.ExpandIntoStringLeaveEscaped(s, ExpanderOptions.ExpandPropertiesAndItems, itemElement.IncludeLocation), out provenance);
 
                     if (occurrencesInInclude > 0)
                     {
@@ -1083,7 +1085,49 @@ namespace Microsoft.Build.Evaluation
             return result;
         }
 
-        private static int IsItemInItemSpec(string itemSpec, string item, out Provenance provenance)
+        /// <summary>
+        /// Since:
+        ///     - we have no proper AST and interpreter for itemspecs that we can do analysis on
+        ///     - GetItemProvenance needs to have correct counts for exclude strings (as correct as it can get while doing it after evaluation)
+        /// 
+        /// The temporary hack is to use the expander to expand the strings, and if any property or item references were encountered, return Provenance.Inconclusive
+        /// </summary>
+        /// <param name="itemToMatch"></param>
+        /// <param name="itemSpec"></param>
+        /// <param name="expander"></param>
+        /// <param name="provenance"></param>
+        /// <returns></returns>
+        private static int ItemMatchesInSpecCompareViaExpander(string itemToMatch, string itemSpec, Func<string, string> expander, out Provenance provenance)
+        {
+            if (string.IsNullOrEmpty(itemSpec))
+            {
+                provenance = Provenance.Undefined;
+                return 0;
+            }
+
+            var expandedString = expander(itemSpec);
+
+            // look into the itemspec as expanded by the Expander
+            Provenance provenanceFromExpandedString;
+            var expandedMatches = ItemMatchesInSpec(itemToMatch, expandedString, out provenanceFromExpandedString);
+
+            // look into the raw itemspec
+            Provenance provenanceFromNonExpandedString;
+            var nonExpandedMatches = ItemMatchesInSpec(itemToMatch, itemSpec, out provenanceFromNonExpandedString);
+
+            if (expandedMatches > nonExpandedMatches)
+            {
+                provenance = Provenance.Inconclusive;
+                return expandedMatches;
+            }
+            else
+            {
+                provenance = provenanceFromNonExpandedString;
+                return nonExpandedMatches;
+            }
+        }
+
+        private static int ItemMatchesInSpec(string itemToMatch, string itemSpec, out Provenance provenance)
         {
             provenance = Provenance.Undefined;
 
@@ -1101,13 +1145,13 @@ namespace Microsoft.Build.Evaluation
                     continue;
                 }
 
-                if (IsGlobFragment(itemFragment) && IsFileInGlob(itemFragment, item))
+                if (IsGlobFragment(itemFragment) && IsFileInGlob(itemFragment, itemToMatch))
                 {
                     provenance |= Provenance.Glob;
                     occurrences++;
                 }
 
-                if (item.Equals(itemFragment))
+                if (itemToMatch.Equals(itemFragment))
                 {
                     provenance |= Provenance.StringLiteral;
                     occurrences++;
@@ -3262,7 +3306,8 @@ namespace Microsoft.Build.Evaluation
     {
         Undefined = 0,
         StringLiteral = 1,
-        Glob = 2
+        Glob = 2,
+        Inconclusive = 4
     }
 
     public enum Operation

@@ -2604,6 +2604,26 @@ namespace Microsoft.Build.UnitTests.OM.Definition
             AssertProvenanceResult(expected, project, "1");
         }
 
+        [Fact]
+        public void GetItemProvenanceMatchesLiteralsWithNonCanonicPaths()
+        {
+            var project =
+                @"<Project ToolsVersion='msbuilddefaulttoolsversion' DefaultTargets='Build' xmlns='msbuildnamespace'>
+                  <ItemGroup>
+                    <A Include=`1.foo;.\1.foo;.\.\1.foo`/>
+                  </ItemGroup>
+                </Project>
+                ";
+
+            var expected = new List<Tuple<string, Operation, Provenance, int>>
+            {
+                Tuple.Create("A", Operation.Include, Provenance.StringLiteral, 3)
+            };
+
+            AssertProvenanceResult(expected, project, "1.foo");
+            AssertProvenanceResult(expected, project, @".\1.foo");
+        }
+
         private static void AssertProvenanceResult(List<Tuple<string, Operation, Provenance, int>> expected, string project, string itemValue)
         {
             var provenanceResult = ObjectModelHelpers.CreateInMemoryProject(project).GetItemProvenance(itemValue);

@@ -1097,7 +1097,7 @@ namespace Microsoft.Build.Evaluation
         /// <param name="expand"></param>
         /// <param name="provenance"></param>
         /// <returns></returns>
-        private static int ItemMatchesInSpecCompareViaExpander(string itemToMatch, string itemSpec, Func<string, ExpanderOptions, string> expand, out Provenance provenance)
+        private int ItemMatchesInSpecCompareViaExpander(string itemToMatch, string itemSpec, Func<string, ExpanderOptions, string> expand, out Provenance provenance)
         {
             if (string.IsNullOrEmpty(itemSpec))
             {
@@ -1134,7 +1134,7 @@ namespace Microsoft.Build.Evaluation
             }
         }
 
-        private static int ItemMatchesInSpec(string itemToMatch, string itemSpec, out Provenance provenance)
+        private int ItemMatchesInSpec(string itemToMatch, string itemSpec, out Provenance provenance)
         {
             provenance = Provenance.Undefined;
 
@@ -1152,13 +1152,13 @@ namespace Microsoft.Build.Evaluation
                     continue;
                 }
 
-                if (IsGlobFragment(itemFragment) && IsFileInGlob(itemFragment, itemToMatch))
+                if (IsGlobFragment(itemFragment) && ItemMatchesGlob(itemFragment, itemToMatch))
                 {
                     provenance |= Provenance.Glob;
                     occurrences++;
                 }
 
-                if (itemToMatch.Equals(itemFragment))
+                if (ItemMatchesStringLiteral(itemToMatch, itemFragment))
                 {
                     provenance |= Provenance.StringLiteral;
                     occurrences++;
@@ -1168,7 +1168,15 @@ namespace Microsoft.Build.Evaluation
             return occurrences;
         }
 
-        private static bool IsFileInGlob(string globPattern, string file)
+        private bool ItemMatchesStringLiteral(string itemToMatch, string itemFragment)
+        {
+            var thisProjectPath = _data.Directory;
+
+            // It is either a direct string match or the two strings refer to the same file, relative to the project directory
+            return itemToMatch.Equals(itemFragment) || string.Equals(FileUtilities.GetFullPath(itemToMatch, thisProjectPath), FileUtilities.GetFullPath(itemFragment, thisProjectPath));
+        }
+
+        private static bool ItemMatchesGlob(string globPattern, string file)
         {
             var match = FileMatcher.FileMatch(globPattern, file);
             return match.isLegalFileSpec && match.isMatch;

@@ -1065,7 +1065,7 @@ namespace Microsoft.Build.Evaluation
             {
                 Provenance provenance;
 
-                var occurrencesInExclude = ItemMatchesInSpecCompareViaExpander(itemValue, itemElement.Exclude, s => expander.ExpandIntoStringLeaveEscaped(s, ExpanderOptions.ExpandPropertiesAndItems, itemElement.ExcludeLocation), out provenance);
+                var occurrencesInExclude = ItemMatchesInSpecCompareViaExpander(itemValue, itemElement.Exclude, (s, o) => expander.ExpandIntoStringLeaveEscaped(s, o, itemElement.ExcludeLocation), out provenance);
 
                 if (occurrencesInExclude > 0)
                 {
@@ -1073,7 +1073,7 @@ namespace Microsoft.Build.Evaluation
                 }
                 else
                 {
-                    var occurrencesInInclude = ItemMatchesInSpecCompareViaExpander(itemValue, itemElement.Include, s => expander.ExpandIntoStringLeaveEscaped(s, ExpanderOptions.ExpandPropertiesAndItems, itemElement.IncludeLocation), out provenance);
+                    var occurrencesInInclude = ItemMatchesInSpecCompareViaExpander(itemValue, itemElement.Include, (s, o) => expander.ExpandIntoStringLeaveEscaped(s, o, itemElement.IncludeLocation), out provenance);
 
                     if (occurrencesInInclude > 0)
                     {
@@ -1094,10 +1094,10 @@ namespace Microsoft.Build.Evaluation
         /// </summary>
         /// <param name="itemToMatch"></param>
         /// <param name="itemSpec"></param>
-        /// <param name="expander"></param>
+        /// <param name="expand"></param>
         /// <param name="provenance"></param>
         /// <returns></returns>
-        private static int ItemMatchesInSpecCompareViaExpander(string itemToMatch, string itemSpec, Func<string, string> expander, out Provenance provenance)
+        private static int ItemMatchesInSpecCompareViaExpander(string itemToMatch, string itemSpec, Func<string, ExpanderOptions, string> expand, out Provenance provenance)
         {
             if (string.IsNullOrEmpty(itemSpec))
             {
@@ -1105,11 +1105,13 @@ namespace Microsoft.Build.Evaluation
                 return 0;
             }
 
-            var expandedString = expander(itemSpec);
+            // look into the itemspec as if it were expanded by the Expander
+            Provenance provenanceFromExpandedPropertiesAndItems;
+            var expandedMatches = ItemMatchesInSpec(itemToMatch, expand(itemSpec, ExpanderOptions.ExpandPropertiesAndItems), out provenanceFromExpandedPropertiesAndItems);
 
-            // look into the itemspec as expanded by the Expander
-            Provenance provenanceFromExpandedString;
-            var expandedMatches = ItemMatchesInSpec(itemToMatch, expandedString, out provenanceFromExpandedString);
+            // look into the itemspec when properties are expanded, but not items
+            Provenance provenanceFromExpandedProperties;
+            ItemMatchesInSpec(itemToMatch, expand(itemSpec, ExpanderOptions.ExpandProperties), out provenanceFromExpandedProperties);
 
             // look into the raw itemspec
             Provenance provenanceFromNonExpandedString;
@@ -1117,7 +1119,12 @@ namespace Microsoft.Build.Evaluation
 
             if (expandedMatches > nonExpandedMatches)
             {
-                provenance = Provenance.Inconclusive;
+                // return the number of occurences when properties AND items are expanded to get the correct occurence count
+
+                // return the provenance WITHOUT item expansion. Otherwise the items coming from a referenced item get interpreted as StringLiteral
+                // include="*.cs;@(Compile)" needs to return Inconclusive|Glob and not Inconclusive|Glob|StringLiteral
+
+                provenance = Provenance.Inconclusive | provenanceFromExpandedProperties;
                 return expandedMatches;
             }
             else
